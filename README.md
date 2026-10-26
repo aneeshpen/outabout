@@ -52,6 +52,7 @@ DigiPass enhances campus security through quick identification verification at i
 3. Verification checks:
     * Pass status evaluates to **Approved**.
     * Current timestamp falls within the pass validity range.
+    * The pass has not already been closed by a check-in.
 
 If valid → ✅ **Access Granted** If invalid → ❌ **Access Denied**
 
@@ -65,17 +66,19 @@ If valid → ✅ **Access Granted** If invalid → ❌ **Access Denied**
 - **Axios** (API Client)
 - **Tailwind CSS** (Modern utility-first layout)
 - **Context API** (Global state & Auth state management)
+- **Vite** (Dev server & build)
 
 ### Backend
-- **Node.js** & **Express.js** (REST API)
-- **Prisma ORM** (Database mapping and migrations)
-- **JSON Web Tokens (JWT)** (Secure token stateless authorization)
+- **Python** & **FastAPI** (REST API)
+- **SQLAlchemy 2.x** (ORM, layered behind a repository tier)
+- **Pydantic v2** (Request/response validation)
+- **PyJWT** (Stateless token authorization, HS256)
 - **Bcrypt** (Secure password hashing)
-- **Multer** & **CSV-Parser** (Stream-based multi-part text loading)
-- **Supabase Storage** (Cloud bucket for secure profile photo hosting)
+- **zxing-cpp** & **Pillow** (ID-card barcode decoding)
+- **Supabase Storage** (Optional cloud bucket for profile photos, with a local filesystem fallback)
 
 ### Database
-- **PostgreSQL**
+- **PostgreSQL** (production) — **SQLite** works out of the box for local development
 
 ---
 
@@ -83,18 +86,27 @@ If valid → ✅ **Access Granted** If invalid → ❌ **Access Denied**
 ```bash
 DigiPass/
 │
-├── backend-sec/            # Node.js + Express API
-│   ├── routers/            # Auth, Pass, Admin routes
-│   ├── utils/              # Database connection pools
-│   ├── prisma/             # Schema definitions and migrations
-│   └── index.js            # Entry server file
+├── backend/                 # Python + FastAPI API
+│   ├── app/
+│   │   ├── main.py          # App factory, middleware, router registration
+│   │   ├── core/            # Settings and security primitives
+│   │   ├── dependencies/    # DB session + auth/role dependencies
+│   │   ├── models/          # SQLAlchemy entities
+│   │   ├── schemas/         # Pydantic request/response contracts
+│   │   ├── repositories/    # All database queries
+│   │   ├── services/        # Business rules
+│   │   ├── routers/         # HTTP endpoints
+│   │   └── utils/           # Timezone, barcode, storage, notifications
+│   ├── tests/               # Unit, API and end-to-end tests
+│   ├── docs/schema.sql      # Reference PostgreSQL DDL
+│   ├── requirements.txt
+│   └── README.md            # Architecture, API reference, business rules
 │
-├── frontend/               # React SPA Client
+├── frontend/                # React SPA Client
 │   ├── src/
-│   │   ├── components/     # UI Elements
-│   │   ├── pages/          # Dashboard, Admin, Login views
-│   │   ├── context/        # Global authentication states
-│   │   ├── services/       # Axio API wrappers (api.js)
+│   │   ├── components/      # UI Elements
+│   │   ├── context/         # Global authentication states
+│   │   ├── services/        # Axios API wrappers (api.js)
 │   │   └── App.jsx
 │
 └── README.md
@@ -105,47 +117,69 @@ DigiPass/
 
 ### 1️⃣ Clone Repository
 ```bash
-git clone [https://github.com/Shogun585/DigiPass.git](https://github.com/Shogun585/DigiPass.git)
+git clone https://github.com/Shogun585/DigiPass.git
 cd DigiPass
 ```
-### 2️⃣ Backend Setup
-Navigate to the server workspace and install dependencies:
+
+### 2️⃣ Backend Setup (FastAPI)
 ```bash
-cd backend-sec
-npm install
+cd backend
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS / Linux
+pip install -r requirements.txt
 ```
-Create your environment file (.env):
+
+Create your environment file from the template and edit it:
 ```bash
-cd backend-sec
-touch .env
+cp .env.example .env
 ```
-Configure your environment file (.env):
+
 ```
-DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public" # connection pooling database url
-DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public" # simple database connectivity url
-JWT_SECRET="your_super_secret_key"
-SUPABASE_URL="your_supabase_project_url" # Supabase project URL for cloud storage
-SUPABASE_SERVICE_ROLE_KEY="your_supabase_service_role_key" # Supabase service role key for bucket access
+DATABASE_URL="postgresql+psycopg2://USER:PASSWORD@HOST:5432/DATABASE"  # or the SQLite default
+SECRET_KEY="your_super_secret_key"          # >= 32 random characters
+CORS_ORIGINS="http://localhost:5173,https://localhost:5173"
+DEFAULT_PASSWORD="password_for_new_accounts"
+SUPABASE_URL="your_supabase_project_url"            # optional
+SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"   # optional
 ```
-Generate the client instances and map schemas into your active database engine:
+
+Confirm the database is reachable and matches what the app expects (read-only;
+it never writes, alters or drops anything):
 ```bash
-npx prisma db push
-npx prisma generate
+python check_database.py
 ```
-Start the local server instance:
+
+Start the API:
 ```bash
-npm start
+uvicorn app.main:app --reload --port 8000
 ```
-The API engine will activate locally on http://localhost:8000
+The API runs on http://localhost:8000 and its interactive documentation on http://localhost:8000/docs
+
+Optional — create one demo account per role for local development:
+```bash
+python seed_dev_data.py
+```
 
 ### 3️⃣ Frontend Setup
 Open a separate terminal window, access the client workspace, and trigger assembly:
 ```bash
 cd frontend
+cp .env.example .env     # sets VITE_API_URL=http://localhost:8000
 npm install
 npm run dev
 ```
-Frontend development engine targets: http://localhost:5173
+Frontend development engine targets: https://localhost:5173
+
+> The Vite dev server serves over HTTPS (`@vitejs/plugin-basic-ssl`). Accept the
+> self-signed certificate warning once. Browsers treat `http://localhost` as a
+> trustworthy origin, so calls to the API are not blocked as mixed content.
+
+### 4️⃣ Tests
+```bash
+cd backend
+python -m pytest
+```
 
 ---
 

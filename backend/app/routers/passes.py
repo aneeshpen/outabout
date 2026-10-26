@@ -1,145 +1,158 @@
-from fastapi import APIRouter,Depends, status, HTTPException
-from sqlalchemy.orm import Session
-from ..utils import database, models, oauth2, schemas
+"""``/pass`` - the pass lifecycle endpoints used by the student and warden
+screens.
+
+Note how each handler names the role it requires as a dependency
+(``Depends(require_student)``), so authorisation is enforced before the body
+runs, and every handler is one call into :class:`LeavePassService`.
+"""
+
 from typing import List
-from datetime import date
 
-router = APIRouter(prefix="/pass",tags=["Pass"])
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
-# @router.post("/", response_model= schemas.PassDisplay)
-# def create(request: schemas.PassCreate, db: Session= Depends(database.get_db), current_user: models.Users= Depends(oauth2.get_current_user)):
-#     # check for market pass, the leave start and end date should be same 
-#     if request.pass_type.lower() == schemas.PassType.market.lower() and request.leave_start != request.leave_end:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST, detail= "For market pass the leave start and end should be same"
-#         )
-#     new_pass= models.LeavePass( pass_type= request.pass_type.value,leave_start= request.leave_start, leave_end= request.leave_end, college_id= current_user.id)
-#     db.add(new_pass)
-#     db.commit()
-#     db.refresh(new_pass)
-#     return new_pass
+from app.dependencies.auth import (
+    require_student,
+    require_warden,
+    require_warden_or_admin,
+)
+from app.dependencies.database import get_db
+from app.models import User
+from app.schemas.leave_pass import (
+    LatePassResponse,
+    PassConvertRequest,
+    PassConvertResponse,
+    PassCreateRequest,
+    PassEvaluationRequest,
+    PassExtendRequest,
+    PassExtendResponse,
+    PassRemarkRequest,
+    PassRemarkResponse,
+    PassResponse,
+    PassWithLogsResponse,
+    PendingPassResponse,
+)
+from app.schemas.log import LogPage
+from app.services.leave_pass_service import LeavePassService
 
-# @router.get("/pending",response_model=List[schemas.PassDisplay])
-# def ViewPending(db:Session = Depends(database.get_db), current_warden: models.Users = Depends(oauth2.get_current_warden)):
-#     pass_query= db.query(models.LeavePass).filter(models.LeavePass.pass_status== "pending").all()
-#     return pass_query
+router = APIRouter(prefix="/pass", tags=["Pass"])
 
-# @router.put("/{pass_id}", response_model= schemas.PassDisplay)
-# def PassUpdate(pass_id:int, request:schemas.PassEvaluation, db:Session= Depends(database.get_db), current_warden: models.Users = Depends(oauth2.get_current_warden)):
-#     pass_query= db.query(models.LeavePass).filter(models.LeavePass.pass_id== pass_id)
-#     if not pass_query.first():
-#         raise HTTPException (status_code=status.HTTP_404_NOT_FOUND, detail= f"No pass with pass id {pass_id}")
-#     pass_query.update({"pass_status": request.pass_status.value})
-#     db.commit()
-#     db.refresh(pass_query.first())
-#     return pass_query.first()   
 
-# @router.get("/my_pass",response_model= List[schemas.PassDisplay])
-# def ViewPass(db:Session =Depends(database.get_db),current_user: models.Users = Depends(oauth2.get_current_user)):
-#     pass_query = db.query(models.LeavePass).filter(models.LeavePass.college_id == current_user.id).all()
-#     if not pass_query:
-#         raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail= f"no passes for the student with id {current_user.id}")
-#     return pass_query
+# --- student ---------------------------------------------------------------
 
-# @router.get("/{student_id}", response_model= List[schemas.PassDisplay])
-# def ViewPasses(student_id: str, db: Session = Depends(database.get_db), current_user: models.Users = Depends(oauth2.get_current_staff)):
-#     pass_query= db.query(models.LeavePass).filter(models.LeavePass.college_id== student_id).all()
-#     if not pass_query:
-#         raise HTTPException(status_code= status.HTTP_404_NOT_FOUND, detail= f"no passes found for student with id {student_id}")
-#     return pass_query
-
-@router.post("/", response_model=schemas.PassDisplay)
-def create(
-    request: schemas.PassCreate,
-    db: Session = Depends(database.get_db),
-    current_user: models.Users = Depends(oauth2.get_current_user)
+@router.post("/", response_model=PassResponse)
+@router.post("", response_model=PassResponse, include_in_schema=False)
+def create_pass(
+    request: PassCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_student),
 ):
-    if not request.leave_start:
-        request.leave_start = date.today()
-    if not request.leave_end:
-        request.leave_end = date.today()
+    """Apply for a market or leave pass."""
+    return LeavePassService(db).create_pass(current_user, request)
 
-    """Create a new pass request (Students only)"""
-    # Check if user is a student
-    if current_user.role.lower() != "student":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only students can create pass requests"
-        )
-    
-    # Check for market pass, the leave start and end date should be same
-    if request.pass_type.value.lower() == "market" and request.leave_start != request.leave_end:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="For market pass the leave start and end should be same"
-        )
-    
-    new_pass = models.LeavePass(
-        pass_type=request.pass_type.value,
-        leave_start=request.leave_start,
-        leave_end=request.leave_end,
-        college_id=current_user.id,
-        pass_status="pending"
-    )
-    
-    db.add(new_pass)
-    db.commit()
-    db.refresh(new_pass)
-    
-    return new_pass
 
-@router.get("/pending", response_model=List[schemas.PassDisplay])
-def get_pending(
-    db: Session = Depends(database.get_db),
-    current_user: models.Users = Depends(oauth2.get_current_warden)
-):
-    """Get all pending passes (Warden only)"""
-    passes = db.query(models.LeavePass).filter(
-        models.LeavePass.pass_status == "pending"
-    ).all()
-    return passes
-
-@router.get("/all", response_model=List[schemas.PassDisplay])
-def get_all_passes(
-    db: Session = Depends(database.get_db),
-    current_user: models.Users = Depends(oauth2.get_current_warden)
-):
-    """Get all passes (Warden only)"""
-    passes = db.query(models.LeavePass).all()
-    return passes
-
-@router.get("/my_pass", response_model=List[schemas.PassDisplay])
+@router.get("/my_pass", response_model=List[PassWithLogsResponse])
 def get_my_passes(
-    db: Session = Depends(database.get_db),
-    current_user: models.Users = Depends(oauth2.get_current_user)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_student),
 ):
-    """Get passes for current user (Students only)"""
-    passes = db.query(models.LeavePass).filter(
-        models.LeavePass.college_id == current_user.id
-    ).all()
-    return passes
+    """Pass history of the signed-in student, newest first."""
+    return LeavePassService(db).list_my_passes(current_user)
 
-@router.put("/status/{pass_id}", response_model=schemas.PassDisplay)
-def update_status(
-    pass_id: int,
-    request: schemas.PassEvaluation,
-    db: Session = Depends(database.get_db),
-    current_user: models.Users = Depends(oauth2.get_current_warden)
+
+@router.post("/convert", response_model=PassConvertResponse)
+def convert_pass(
+    request: PassConvertRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_student),
 ):
-    """Update pass status (Warden only)"""
-    pass_obj = db.query(models.LeavePass).filter(
-        models.LeavePass.pass_id == pass_id
-    ).first()
-    
-    if not pass_obj:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Pass with id {pass_id} not found"
-        )
-    
-    # Update status
-    pass_obj.pass_status = request.pass_status.value
-    db.commit()
-    db.refresh(pass_obj)
-    
-    return pass_obj
+    """Upgrade the student's most recent market pass into a leave pass."""
+    detail = LeavePassService(db).convert_market_pass(
+        current_user, request.leave_end
+    )
+    return PassConvertResponse(detail=detail)
+
+
+@router.post("/extend/{pass_id}", response_model=PassExtendResponse)
+def extend_pass(
+    pass_id: int,
+    request: PassExtendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_student),
+):
+    """Push back the return date of an active leave pass."""
+    updated = LeavePassService(db).extend_leave_pass(
+        current_user, pass_id, request.new_leave_end
+    )
+    return PassExtendResponse(
+        detail="Leave pass successfully extended and is pending warden approval.",
+        pass_=PassResponse.model_validate(updated),
+    )
+
+
+# --- warden ----------------------------------------------------------------
+
+@router.get("/pending", response_model=List[PendingPassResponse])
+def get_pending_passes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_warden),
+):
+    """The warden's approval queue, with applicant contact details attached."""
+    return LeavePassService(db).list_pending_passes()
+
+
+@router.get("/all", response_model=List[PassResponse])
+def get_all_passes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_warden),
+):
+    return LeavePassService(db).list_all_passes()
+
+
+@router.put("/status/{pass_id}", response_model=PassResponse)
+def update_pass_status(
+    pass_id: int,
+    request: PassEvaluationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_warden),
+):
+    """Approve or reject a pass, optionally recording a remark."""
+    return LeavePassService(db).evaluate_pass(
+        pass_id, request.pass_status, request.remark
+    )
+
+
+@router.get("/late-returns", response_model=List[LatePassResponse])
+def get_late_returns(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_warden_or_admin),
+):
+    """Today's market passes whose student returned at or after 9 PM IST."""
+    return LeavePassService(db).list_late_returns()
+
+
+@router.put("/remark/{pass_id}", response_model=PassRemarkResponse)
+def add_pass_remark(
+    pass_id: int,
+    request: PassRemarkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_warden_or_admin),
+):
+    updated = LeavePassService(db).set_remark(pass_id, request.remark)
+    return PassRemarkResponse(
+        success=True, pass_=PassResponse.model_validate(updated)
+    )
+
+
+@router.get("/logs", response_model=LogPage)
+def get_logs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_warden_or_admin),
+):
+    """Paginated gate activity: the latest scan per pass in the last 24 hours."""
+    logs, total_pages, current_page = LeavePassService(db).list_recent_logs(
+        page, limit
+    )
+    return LogPage(logs=logs, totalPages=total_pages, currentPage=current_page)

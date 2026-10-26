@@ -1,1 +1,11 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.env.local
+*.sqlite3
+*.db
+uploads/
+.pytest_cache/
 test_scan.py

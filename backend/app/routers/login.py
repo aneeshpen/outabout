@@ -1,28 +1,25 @@
-from fastapi import Depends, status, HTTPException, APIRouter
+"""``POST /login/`` - the only unauthenticated endpoint.
+
+The router does three things and nothing else: declare the path, bind the
+request/response schemas, and delegate to :class:`AuthService`.
+"""
+
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from fastapi.security import OAuth2PasswordRequestForm
-from ..utils import database, hash, models,token_1,schemas
 
-router =APIRouter(prefix="/login", tags=["Login"])
+from app.dependencies.database import get_db
+from app.schemas.auth import LoginRequest, LoginResponse
+from app.services.auth_service import AuthService
 
-@router.post("/")
-def login(request: OAuth2PasswordRequestForm= Depends(), db: Session= Depends(database.get_db)):
-    user= db.query(models.Users).filter(models.Users.id==request.username).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Couldn't find the user")
-    if not hash.Hashing.verify(request.password, user.password):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incorrect credentials")
-    access_token= token_1.create_access_token(data={"sub":user.id})
-    # return schemas.Token(access_token=access_token, token_type="bearer")
-    return schemas.LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        user=schemas.User(
-            id=user.id,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            role=user.role,
-            contact_details=user.contact_details
-        )
-    )
+router = APIRouter(prefix="/login", tags=["Login"])
 
+
+@router.post("/", response_model=LoginResponse)
+@router.post("", response_model=LoginResponse, include_in_schema=False)
+def login(request: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
+    """Exchange college id + password for a bearer token.
+
+    The React client calls ``/login/`` with a JSON body; the second decorator
+    accepts ``/login`` as well so neither spelling 307-redirects.
+    """
+    return AuthService(db).login(request)

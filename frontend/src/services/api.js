@@ -79,13 +79,13 @@ export const passAPI = {
     getPendingPasses: () => api.get('/pass/pending'),
     getAllPasses: () => api.get('/pass/all'),
     updatePassStatus: (passId, status, remark = '') => {
-      api.put(`/pass/status/${passId}`, { pass_status: status.toLowerCase(), remark}) 
+      return api.put(`/pass/status/${passId}`, { pass_status: status.toLowerCase(), remark})
     },
     convertPass : (leaveEndDate) => {
       return api.post('/pass/convert', {leave_end : leaveEndDate})
     },
     extendPass : (passId, newDate) => {
-      api.post(`/pass/extend/${passId}`, {new_leave_end : newDate})
+      return api.post(`/pass/extend/${passId}`, {new_leave_end : newDate})
     },
     getLateReturns : () => api.get('/pass/late-returns'),
     addPassRemark : (passId, remark) => api.put(`/pass/remark/${passId}`, {remark}),
