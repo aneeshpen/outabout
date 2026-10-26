@@ -45,19 +45,6 @@ DigiPass introduces a secure, transparent, and scalable digital alternative.
 
 ---
 
-### 🚪 Smart Gate Verification
-DigiPass enhances campus security through quick identification verification at institutional gates.
-1. Guard input/scanning handles student identification tokens.
-2. System extracts individual student keys.
-3. Verification checks:
-    * Pass status evaluates to **Approved**.
-    * Current timestamp falls within the pass validity range.
-    * The pass has not already been closed by a check-in.
-
-If valid → ✅ **Access Granted** If invalid → ❌ **Access Denied**
-
----
-
 ## 🛠 Tech Stack
 
 ### Frontend
@@ -111,77 +98,6 @@ DigiPass/
 │
 └── README.md
 ```
-
----
-## ⚙️ Getting Started
-
-### 1️⃣ Clone Repository
-```bash
-git clone https://github.com/Shogun585/DigiPass.git
-cd DigiPass
-```
-
-### 2️⃣ Backend Setup (FastAPI)
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # macOS / Linux
-pip install -r requirements.txt
-```
-
-Create your environment file from the template and edit it:
-```bash
-cp .env.example .env
-```
-
-```
-DATABASE_URL="postgresql+psycopg2://USER:PASSWORD@HOST:5432/DATABASE"  # or the SQLite default
-SECRET_KEY="your_super_secret_key"          # >= 32 random characters
-CORS_ORIGINS="http://localhost:5173,https://localhost:5173"
-DEFAULT_PASSWORD="password_for_new_accounts"
-SUPABASE_URL="your_supabase_project_url"            # optional
-SUPABASE_SERVICE_ROLE_KEY="your_service_role_key"   # optional
-```
-
-Confirm the database is reachable and matches what the app expects (read-only;
-it never writes, alters or drops anything):
-```bash
-python check_database.py
-```
-
-Start the API:
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-The API runs on http://localhost:8000 and its interactive documentation on http://localhost:8000/docs
-
-Optional — create one demo account per role for local development:
-```bash
-python seed_dev_data.py
-```
-
-### 3️⃣ Frontend Setup
-Open a separate terminal window, access the client workspace, and trigger assembly:
-```bash
-cd frontend
-cp .env.example .env     # sets VITE_API_URL=http://localhost:8000
-npm install
-npm run dev
-```
-Frontend development engine targets: https://localhost:5173
-
-> The Vite dev server serves over HTTPS (`@vitejs/plugin-basic-ssl`). Accept the
-> self-signed certificate warning once. Browsers treat `http://localhost` as a
-> trustworthy origin, so calls to the API are not blocked as mixed content.
-
-### 4️⃣ Tests
-```bash
-cd backend
-python -m pytest
-```
-
----
 
 ## 🧪 Application Flow
 1. Administrative Setup: Bulk uploads or appends user data via CSV schema records.
